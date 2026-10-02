@@ -1,0 +1,25 @@
+[project]
+name = "econ"
+version = "0.1.0"
+description = "Game economy balancing harness: a YAML economy format, a linter backed by Lean proofs, and a Monte Carlo player simulator."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.7",
+    "ruamel.yaml>=0.18",
+    "numpy>=1.26",
+    "scipy>=1.12",
+]
+
+[project.scripts]
+econ = "econ.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.8,<0.11"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,83 @@
+# Exploit Island — a deliberately broken economy that exercises most lint rules.
+#
+#   uv run econ lint examples/broken_economy.yaml
+#
+# Every problem below is intentional; the comments say which rule should fire.
+
+meta:
+  name: Exploit Island
+  encounter_rate: 3
+
+currencies:
+  gold:
+    wallet_cap: 5000
+  tokens: {}                    # no-sink: dropped by bunnies, nothing costs tokens
+
+items:
+  rusty_dagger: {buy: 20, sell: 12, slot: weapon, power: 1, half_life: 4}   # upkeep-heavy; granted on respawn → death-farming
+  great_axe:    {buy: 9000, sell: 3000, slot: weapon, power: 6, min_level: 5} # unaffordable: 9000 > wallet cap 5000
+  bread:        {buy: 0, consumable: true, power: 3}                          # free-item
+  herb:         {sell: 3}
+  potion:       {buy: 15, sell: 4, consumable: true, power: 1}
+  silver_ring:  {buy: 100, sell: 98}        # penalty-evasion: 2% round trip vs 50% death penalty
+  copper_ore:   {buy: 5, sell: 1}
+  copper_bar:   {sell: 25}                  # money-pump: 3 ore (15) + 2 fee -> bar sells for 25
+  feather:      {}                          # dead-item: dropped, but no use at all
+  dragon_scale: {sell: 500}                 # unobtainable-item
+  clone_vat:    {sell: 40}
+  amulet:       {buy: 50, sell: 60}         # buy-below-sell
+
+recipes:
+  smelt:     {inputs: {copper_ore: 3}, outputs: {copper_bar: 1}, cost: 2}
+  brew:      {inputs: {herb: 2}, outputs: {potion: 1}}
+  replicate: {inputs: {clone_vat: 1}, outputs: {clone_vat: 2}, cost: 1}  # duplication (and a pump via selling)
+
+enemies:
+  bunny:
+    level: 1
+    xp: 30
+    drops:
+      - {currency: gold, amount: [5, 10]}
+      - {item: herb, chance: 0.5}
+      - {item: feather, chance: 0.3}
+      - {currency: tokens, amount: 1}
+  wolf:   {level: 3, xp: 12, drops: [{currency: gold, amount: [4, 12]}]}
+  ogre:   {level: 6, xp: 40, drops: [{currency: gold, amount: [20, 60]}, {item: clone_vat, chance: 0.1}]}
+  dragon: {level: 15, xp: 500, drops: [{currency: gold, amount: 6000}]}   # wallet-overflow: drop > cap
+  ghost:  {level: 4, xp: 5}                                               # unused: in no location
+
+locations:
+  village: {safe: true}
+  fields:                       # risk-reward-inversion: easier than woods but pays more XP
+    level_range: [1, 4]
+    enemies: [{enemy: bunny}]
+  woods:                        # lifespan-short: ogres far above the range
+    level_range: [4, 7]
+    enemies:
+      - {enemy: wolf, weight: 50}
+      - {enemy: ogre, weight: 50, level: [8, 10]}
+  lair:                         # level-gap: nothing covers levels 8-11
+    level_range: [12, 15]
+    enemies: [{enemy: dragon}]
+
+battle:
+  formula: 0.6 + 0.1 * delta    # odds-range (leaves [0, 1]) and immortal (p = 1 at delta >= 4)
+
+progression:
+  max_level: 15
+  xp_to_next: 10 * level        # leveling-pace: far too fast
+
+respawn:
+  location: village
+  level: max(1, level - 2)      # death-spiral together with losing all gear
+  currencies:
+    gold: floor(amount * 0.5)   # 50% penalty
+  equipped:
+    lose_chance: 1.0
+  grants:
+    - {item: rusty_dagger, if_missing: true}
+
+player:
+  start:
+    currencies: {gold: 30}
+    items: {rusty_dagger: 1}

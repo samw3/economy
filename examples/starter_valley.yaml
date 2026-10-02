@@ -1,0 +1,146 @@
+# Starter Valley — a small, reasonably balanced example economy.
+#
+#   uv run econ lint examples/starter_valley.yaml
+#   uv run econ sim  examples/starter_valley.yaml -n 3000 --runs 100
+#
+# Money can be written as base units (150), denominations ("1s 50c"), or "5 gem".
+# Formulas are small arithmetic expressions; see `uv run econ explain formulas`.
+
+meta:
+  name: Starter Valley
+  version: 1
+  encounter_rate: 2          # encounters per minute of play (fixed rate)
+
+currencies:
+  coin:
+    denominations:
+      - {name: copper, symbol: c, value: 1}
+      - {name: silver, symbol: s, value: 100}
+      - {name: gold,   symbol: g, value: 10000}
+    wallet_cap: 20g
+  gem:                       # rare currency dropped by trolls, exchangeable for coin
+    wallet_cap: 99
+
+items:
+  # --- weapons (slot: weapon) — power = bonus effective levels while equipped
+  training_sword: {sell: 0c, slot: weapon, power: 0.5, half_life: 300, description: "Granted on respawn; worthless to vendors."}
+  wooden_sword:   {buy: 40c,     sell: 10c,    slot: weapon, power: 1,   half_life: 120}
+  bronze_sword:   {buy: 2s,      sell: 50c,    slot: weapon, power: 2,   half_life: 200, min_level: 3}
+  iron_sword:     {buy: 8s,      sell: 2s,     slot: weapon, power: 3,   half_life: 300, min_level: 6}
+  steel_blade:    {              sell: 6s,     slot: weapon, power: 5,   half_life: 500, min_level: 10}
+  # --- armor
+  leather_armor:  {buy: 80c,     sell: 20c,    slot: armor,  power: 1,   half_life: 200, min_level: 2}
+  chainmail:      {buy: 9s,      sell: 2s 50c, slot: armor,  power: 2,   half_life: 400, min_level: 7}
+  # --- consumables: +power for one battle, used when the odds look bad
+  health_potion:  {buy: 40c,     sell: 5c,     consumable: true, power: 1.5}
+  # --- materials
+  slime_gel:      {sell: 2c}
+  bone:           {sell: 4c}
+  wolf_pelt:      {sell: 12c}
+  iron_ore:       {buy: 40c,     sell: 10c}
+  iron_bar:       {buy: 1s 50c,  sell: 35c}
+  troll_hide:     {sell: 1s}
+
+recipes:
+  tan_leather:                       # crafting from loot is cheaper than buying
+    inputs: {wolf_pelt: 4}
+    outputs: {leather_armor: 1}
+    cost: 10c
+  smelt_iron:                        # refining
+    inputs: {iron_ore: 3}
+    outputs: {iron_bar: 1}
+    cost: 5c
+  forge_steel_blade:
+    inputs: {iron_bar: 4, troll_hide: 2}
+    outputs: {steel_blade: 1}
+    cost: 3s
+    success_chance: 0.8
+    min_level: 9
+  sell_gem:                          # currency exchange (one way)
+    inputs: {gem: 1}
+    outputs: {coin: 1s}
+
+enemies:
+  slime:    {level: 1,  xp: 5,  drops: [{currency: coin, amount: [1, 3]}, {item: slime_gel, chance: 0.5}]}
+  rat:      {level: 2,  xp: 8,  drops: [{currency: coin, amount: [2, 5]}, {item: bone, chance: 0.3}]}
+  wolf:     {level: 4,  xp: 14, drops: [{currency: coin, amount: [4, 10]}, {item: wolf_pelt, chance: 0.4}]}
+  skeleton: {level: 6,  xp: 24, drops: [{currency: coin, amount: [8, 20]}, {item: bone, qty: [1, 2], chance: 0.7}, {item: iron_ore, chance: 0.25}]}
+  goblin:   {level: 8,  xp: 34, drops: [{currency: coin, amount: [15, 40]}, {item: iron_ore, chance: 0.4}, {item: health_potion, chance: 0.08}]}
+  troll:
+    level: 12
+    xp: 80
+    drops:
+      - {currency: coin, amount: [30, 80]}
+      - {item: troll_hide, chance: 0.35}
+      - {currency: gem, amount: 1, chance: 0.05}
+
+locations:
+  town: {safe: true, description: "Respawn point and shops."}
+  meadow:
+    level_range: [1, 3]
+    enemies:
+      - {enemy: slime, weight: 65}
+      - {enemy: rat,   weight: 35}
+  forest:
+    level_range: [3, 6]
+    enemies:
+      - {enemy: wolf, weight: 60, level: [3, 5]}
+      - {enemy: rat,  weight: 25, level: 3}
+      - {enemy: slime, weight: 15, level: 2}
+  crypt:
+    level_range: [6, 9]
+    enemies:
+      - {enemy: skeleton, weight: 70, level: [6, 8]}
+      - {enemy: goblin,   weight: 30, level: 7}
+  mountains:
+    level_range: [9, 15]
+    enemies:
+      - {enemy: goblin, weight: 50, level: [9, 11]}
+      - {enemy: troll,  weight: 50, level: [11, 14]}
+
+params:
+  bias: 3.0                  # how forgiving even fights are
+  spread: 1.1                # levels per e-fold of odds
+
+battle:
+  description: Logistic in the level difference, with a 0.5% floor and 99.5% ceiling.
+  formula: clamp(sigmoid((delta + bias) / spread), 0.005, 0.995)
+
+progression:
+  max_level: 15
+  xp_to_next: floor(60 * level ^ 1.7)
+  # XP is reduced for enemies below your level (anti-farming) and boosted above it.
+  xp_gain: xp * clamp(1 + 0.15 * (enemyLevel - playerLevel), 0.1, 1.5)
+
+respawn:
+  location: town
+  level: level               # keep level
+  xp: floor(xp * 0.5)        # lose half of the progress towards the next level
+  currencies:
+    coin: floor(amount * 0.85)   # lose 15% of coin
+  inventory:
+    lose_chance: 0.1         # each unequipped item has a 10% chance to be lost
+  equipped:
+    lose_chance: 0.0
+  grants:
+    - {item: training_sword, qty: 1, if_missing: true}
+
+player:
+  start:
+    level: 1
+    currencies: {coin: 60c}
+    items: {wooden_sword: 1, health_potion: 2}
+  policy:
+    location: auto
+    max_death_risk: 0.03
+    objective: xp
+    buy_consumables: 2
+    use_consumables_below: 0.6
+    craft: all
+
+targets:
+  lifespan: [20, 600]            # encounters per life (10 min .. 5 h at 2/min)
+  even_fight_win: [0.6, 0.95]
+  encounters_per_level: [8, 250]
+  max_upkeep_ratio: 0.5
+  wallet_fill_encounters: 300

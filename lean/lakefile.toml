@@ -1,0 +1,6 @@
+name = "economy"
+version = "0.1.0"
+defaultTargets = ["EconomyModel"]
+
+[[lean_lib]]
+name = "EconomyModel"

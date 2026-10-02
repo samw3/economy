@@ -1,0 +1,104 @@
+# Economy template — every section and field, with defaults noted.
+# Lint:      uv run econ lint <this file>
+# Simulate:  uv run econ sim <this file> -n 1000
+# Reference: docs/FORMAT.md, `uv run econ explain formulas`, `uv run econ schema`
+
+meta:
+  name: My Economy
+  encounter_rate: 1            # encounters per minute of play (fixed rate)
+
+# Global constants usable in every formula.
+params:
+  bias: 3.0
+  spread: 1.2
+
+currencies:
+  coin:                         # first currency is the primary one (or mark `primary: true`)
+    denominations:              # optional; exactly one must have value 1 (the base unit)
+      - {name: copper, symbol: c, value: 1}
+      - {name: silver, symbol: s, value: 100}
+    wallet_cap: 50s             # max holding; excess loot is lost (omit = unlimited)
+
+items:
+  # Money: 150 | "1s 50c" | "5 gem" | {gem: 5, coin: 2s}. Omit buy/sell if vendors don't trade it.
+  wooden_sword: {buy: 50c, sell: 12c, slot: weapon, power: 1, half_life: 100}
+  #   slot:      makes it gear (one item per slot is equipped: the best one)
+  #   power:     bonus effective levels while equipped (or for one battle, if consumable)
+  #   half_life: uses until a 50% chance it broke (gear: 1 use = 1 encounter equipped)
+  #   min_level: level required to equip
+  potion: {buy: 30c, sell: 5c, consumable: true, power: 2}
+  pelt: {sell: 8c}
+  vest: {buy: 60c, sell: 15c, slot: armor, power: 1, half_life: 150, min_level: 2}
+
+recipes:                        # crafting, refining, salvage and currency exchange
+  leather_vest:
+    inputs: {pelt: 3}           # item -> qty, or currency -> amount
+    outputs: {vest: 1}
+    cost: 10c                   # additional crafting fee
+    success_chance: 1.0         # inputs + cost are always consumed
+
+enemies:
+  rat:
+    level: 1
+    xp: 6
+    drops:                      # independent rolls on each kill
+      - {currency: coin, amount: [1, 4]}   # amount or [min, max] (uniform)
+      - {item: pelt, qty: 1, chance: 0.3}
+  wolf:
+    level: 3
+    xp: 14
+    drops:
+      - {currency: coin, amount: [3, 9]}
+      - {item: pelt, qty: [1, 2], chance: 0.5}
+
+locations:
+  town: {safe: true}            # no encounters
+  field:
+    level_range: [1, 5]         # player levels this location is designed for
+    enemies:                    # encounter table: relative weights, optional level override
+      - {enemy: rat, weight: 85}
+      - {enemy: wolf, weight: 15, level: [2, 3]}
+
+battle:
+  # P(player wins). Variables: playerLevel (incl. gear/consumables), enemyLevel, delta.
+  formula: clamp(sigmoid((delta + bias) / spread), 0.01, 0.99)
+
+progression:
+  max_level: 5
+  xp_to_next: floor(100 * level ^ 1.5)       # or a list: [100, 282, 519, 800]
+  xp_gain: xp * clamp(1 + 0.1 * (enemyLevel - playerLevel), 0.2, 1.5)   # default: xp
+
+respawn:
+  location: town
+  level: level                  # variables: level, xp, deaths
+  xp: floor(xp * 0.5)           # variables: level, xp, deaths, xpToNext
+  currencies:
+    coin: floor(amount * 0.9)   # variables: amount, cap, level, deaths
+  inventory: {lose_chance: 0.1, protect: []}
+  equipped: {lose_chance: 0.0}
+  grants: []                    # e.g. [{item: wooden_sword, if_missing: true}]
+
+player:
+  start:
+    level: 1
+    currencies: {coin: 50c}
+    items: {wooden_sword: 1}
+  policy:                       # how the simulated player behaves
+    location: auto              # or a location id
+    max_death_risk: 0.03        # auto: best location with death chance per encounter ≤ this
+    objective: xp               # xp | income | balanced
+    sell_loot: true
+    buy_gear: true
+    buy_consumables: 2
+    use_consumables_below: 0.6
+    craft: profitable           # none | profitable | gear | all
+
+targets:                        # design goals checked by the linter
+  lifespan: [20, 400]           # expected encounters per life
+  even_fight_win: [0.6, 0.95]
+  encounters_per_level: [10, 300]
+  max_upkeep_ratio: 0.5
+  wallet_fill_encounters: 100
+
+lint:
+  ignore: []                    # e.g. [dead-item, {code: unused, path: enemies.ghost}]
